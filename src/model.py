@@ -175,8 +175,42 @@ class CheckboxDetector:
         save_path = os.path.join(self.config.save_dir, f"page_{page_num}.png")
         cv2.imwrite(save_path, page_image)
 
+    def predict_images(self, pdf_path):
+        pages = pdf_to_image(pdf_path)
+        drawn_images = {}
 
-_pdf_path = "/home/eduard/Downloads/Cascade Application and Disclosures - Eli Brown.pdf"
-detector = CheckboxDetector(CFG, draw_images=True)
-checkboxes = detector.detect_checkboxes(_pdf_path)
-print(checkboxes)
+        for page_num, page_image in enumerate(pages, start=1):
+            ocr_boxes = self._get_ocr_boxes(page_image)
+            if not ocr_boxes:
+                drawn_images[page_num] = page_image
+                continue
+
+            all_heights = self._get_box_heights(ocr_boxes)
+            if all_heights:
+                height = most_frequent(all_heights)
+                max_checkbox, min_checkbox = height * 2, height * 0.5
+                ocr_tree_x, ocr_tree_y = build_interval_trees(ocr_boxes)
+
+                img_bin_final = self._get_binary_image(page_image)
+                _, checkboxes = self._detect_checkboxes_in_image(img_bin_final, page_image, ocr_tree_x, ocr_tree_y,
+                                                                 ocr_boxes, max_checkbox, min_checkbox)
+
+                self._draw_checkboxes(page_image, checkboxes)
+            drawn_images[page_num] = page_image
+
+        return drawn_images
+
+    @staticmethod
+    def _draw_checkboxes(page_image, checkboxes):
+        for checkbox in checkboxes:
+            x1, y1, x2, y2 = checkbox['coordinates']['x1'], checkbox['coordinates']['y1'], checkbox['coordinates']['x2'], checkbox['coordinates']['y2']
+            color = (0, 0, 255) if checkbox['class'] == 'Marked' else (255, 0, 0)
+            cv2.rectangle(page_image, (x1, y1), (x2, y2), color, 2)
+
+
+if __name__ == '__main__':
+
+    _pdf_path = ""
+    detector = CheckboxDetector(CFG, draw_images=True)
+    checkboxes = detector.predict_images(_pdf_path)
+    print(checkboxes)
