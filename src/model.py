@@ -210,7 +210,7 @@ class CheckboxDetector:
 
 if __name__ == '__main__':
 
-    _pdf_path = "/home/eduard/Downloads/Cascade Application and Disclosures - Eli Brown.pdf"
+    _pdf_path = ""
     detector = CheckboxDetector(CFG, draw_images=True)
     checkboxes = detector.predict_images(_pdf_path)
     print(checkboxes)
