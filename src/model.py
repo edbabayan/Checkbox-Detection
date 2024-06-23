@@ -1,3 +1,5 @@
+import os
+import shutil
 from collections import defaultdict
 
 import cv2
@@ -13,13 +15,18 @@ from src.utils import (build_interval_trees, is_surrounded,
 
 
 class CheckboxDetector:
-    def __init__(self, config):
+    def __init__(self, config, draw_images=False):
         self.config = config
+        self.draw_images = draw_images
 
     def detect_checkboxes(self, pdf_path):
         pages = pdf_to_image(pdf_path)
         results = defaultdict(list)
         all_heights = []
+
+        if self.draw_images:
+            shutil.rmtree(self.config.save_dir, ignore_errors=True)
+            os.makedirs(self.config.save_dir, exist_ok=True)
 
         for page_num, page_image in tqdm(list(enumerate(pages, start=1)), desc="Processing pages"):
             ocr_boxes = self._get_ocr_boxes(page_image)
@@ -28,7 +35,7 @@ class CheckboxDetector:
 
             all_heights.extend(self._get_box_heights(ocr_boxes))
             height = most_frequent(all_heights)
-            max_checkbox, min_checkbox = height * 1.5, height * 0.5
+            max_checkbox, min_checkbox = height * 2, height * 0.5
             ocr_tree_x, ocr_tree_y = build_interval_trees(ocr_boxes)
 
             img_bin_final = self._get_binary_image(page_image)
@@ -36,6 +43,8 @@ class CheckboxDetector:
                                                                       ocr_boxes, max_checkbox, min_checkbox)
 
             results[page_num].extend(checkboxes)
+            if self.draw_images:
+                self._draw_and_save_checkboxes(page_image, checkboxes, page_num)
 
         return results
 
@@ -93,7 +102,7 @@ class CheckboxDetector:
 
         for x, y, w, h, area in stats[2:]:
             if self._is_valid_checkbox(w, h) and not is_surrounded(ocr_tree_x, ocr_tree_y, (x, y, x + w, y + h)):
-                checkbox = self._process_checkbox(x, y, w, h, gray_scale, page_image, ocr_boxes)
+                checkbox = self._process_checkbox(x, y, w, h, gray_scale, ocr_boxes)
                 if checkbox:
                     checkboxes.append(checkbox)
                     detections += 1
@@ -114,17 +123,14 @@ class CheckboxDetector:
 
         if not checkbox_in_ocr_region(checkbox, ocr_boxes):
             sliced_image = gray_scale[y1:y2, x1:x2]
-            sliced_image[sliced_image == 0] = 1
-            sliced_image[sliced_image == 255] = 0
+            sliced_image = np.where(sliced_image > 150, 0, 1)
             height, width = sliced_image.shape
             pixels = height * width
 
             if 0.05 <= sliced_image.sum() / pixels <= 0.75:
                 return {'class': 'Marked', 'coordinates': {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2}}
-            elif sliced_image.sum() / pixels <= 0.75:
+            else:
                 return {'class': 'Unmarked', 'coordinates': {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2}}
-
-        return None
 
     def _detect_fallback_checkboxes(self, stats, gray_scale, ocr_tree_x, ocr_tree_y, ocr_boxes, max_checkbox,
                                     min_checkbox):
@@ -159,8 +165,18 @@ class CheckboxDetector:
     def _is_valid_fallback_checkbox(w, h, max_checkbox, min_checkbox):
         return min_checkbox <= w <= max_checkbox and min_checkbox <= h <= max_checkbox
 
+    def _draw_and_save_checkboxes(self, page_image, checkboxes, page_num):
+        for checkbox in checkboxes:
+            x1, y1, x2, y2 = checkbox['coordinates']['x1'], checkbox['coordinates']['y1'], checkbox['coordinates'][
+                'x2'], checkbox['coordinates']['y2']
+            color = (0, 0, 255) if checkbox['class'] == 'Marked' else (255, 0, 0)
+            cv2.rectangle(page_image, (x1, y1), (x2, y2), color, 2)
 
-_pdf_path = "/home/eduard/Downloads/CAZ PEO D5 - Final Sub Doc Form.pdf"
-detector = CheckboxDetector(CFG)
+        save_path = os.path.join(self.config.save_dir, f"page_{page_num}.png")
+        cv2.imwrite(save_path, page_image)
+
+
+_pdf_path = "/home/eduard/Downloads/Cascade Application and Disclosures - Eli Brown.pdf"
+detector = CheckboxDetector(CFG, draw_images=True)
 checkboxes = detector.detect_checkboxes(_pdf_path)
 print(checkboxes)
