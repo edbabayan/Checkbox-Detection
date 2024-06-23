@@ -1,4 +1,6 @@
+import numpy as np
 from intervaltree import Interval, IntervalTree
+from pdf2image import convert_from_path
 
 
 def most_frequent(height_list):
@@ -70,3 +72,8 @@ def is_surrounded(tree_x, tree_y, target_box):
                 return True
 
     return False
+
+
+def pdf_to_image(pdf_path):
+    pages = convert_from_path(pdf_path)
+    return [np.array(page) for page in pages]
